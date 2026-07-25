@@ -1,4 +1,5 @@
-from flask import Flask,abort,send_file
+from flask import Flask,abort,send_file,request
+import conf
 import websocket_server
 from window_proxy import iconManager
 from pathlib import Path
@@ -6,6 +7,17 @@ from threading import Thread
 from io import BytesIO
 
 app=Flask(__name__)
+
+
+@app.before_request
+def _check_remote():
+    if conf.get('allowRemote'):
+        return None
+    _LOCAL_HOSTS={'127.0.0.1','localhost','::1'}
+    remote=request.remote_addr
+    if remote and remote not in _LOCAL_HOSTS:
+        abort(403)
+    return None
 # Path('icons').mkdir(exist_ok=True)
 from typing import Optional
 @app.route('/icons/<path:path>',methods=['GET'])
@@ -36,7 +48,6 @@ def static2(path):
 # @app.route('/dist/<path:path>')
 # def send_dist(path):
 #     return send_file('dist/'+path)
-import conf
 import semi
 import sys
 from util import is_port_in_use,messageBox,setEnv

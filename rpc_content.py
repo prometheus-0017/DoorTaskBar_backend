@@ -211,3 +211,8 @@ def pin(sess,boolValue):
     from conf import conf
     conf['pin']=boolValue
     return  boolValue
+
+def setAllowRemote(sess,boolValue):
+    from conf import conf
+    conf['allowRemote']=boolValue
+    return boolValue
