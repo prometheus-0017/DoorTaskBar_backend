@@ -20,15 +20,16 @@ class WindowChangeInfo(TypedDict):
     data:WindowProxyDTO
 
 from typing import Callable,Awaitable
-callbacklist:list[Callable[[list[WindowChangeInfo]],Awaitable[None]]]=[]
+callbacklist:dict[str,Callable[[list[WindowChangeInfo]],Awaitable[None]]]={}
 
 import asyncio
 from logging import getLogger
 logger=getLogger(__name__)
 import logging
 logging.basicConfig(level=logging.INFO,filemode='log.txt')
-async def setCallback(context,callback):
-    callbacklist.append(callback)
+async def setCallback(context,id,callback):
+    # 必须得标记callback的身份,因为无法确认对面是真的走了还是网络暂时断开
+    callbacklist[id]=callback
     
 def startWindowsDetectLoop():
     async def loop():
@@ -42,7 +43,8 @@ def startWindowsDetectLoop():
 
 from websockets.exceptions import ConnectionClosedError
 async def _notify(infos:list[WindowChangeInfo]):
-    for callback in callbacklist:
+    for key in callbacklist:
+        callback=callbacklist[key]
         try:
             await callback(infos)
         except ConnectionClosedError:
@@ -51,9 +53,11 @@ async def _notify(infos:list[WindowChangeInfo]):
         except Exception as e:
             import traceback
             traceback.print_exc()
-            callbacklist.remove(callback)
+            del callbacklist[key]
 async def echo(context):
     return '1'
+async def checkLogin(context,id:str):
+    return id in callbacklist
 
 class ChromeProxy:
     async def sync(self)->list[WindowProxyDTO]:
