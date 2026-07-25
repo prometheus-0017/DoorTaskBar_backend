@@ -10,6 +10,10 @@ import win32api
 import win32con
 import win32gui
 
+import pywintypes
+import traceback
+
+
 from conf import conf
 
 # ---- win32 常量（用 ctypes 直接调用，避免 pywin32 的同步 SendMessage 不释放 GIL）----
@@ -58,7 +62,6 @@ class _Signal:
         try:
             self._fn(*args)
         except Exception:
-            import traceback
             traceback.print_exc()
 
 
@@ -141,9 +144,14 @@ class CustomWindow:
                     if dragging:
                         continue
                     self.collapse(False)
-            except Exception:
-                import traceback
-                traceback.print_exc()
+            except Exception as e:
+                if isinstance(e, pywintypes.error):
+                    if(e.args[0:2]==(5,'GetCursorPos')):
+                        # GetCursorPos 错误 permission denied
+                        # 当鼠标移动到特权窗口会触发,所以不见得是需要处理的错误
+                        pass
+                    else:
+                        traceback.print_exc()
 
     # ---- 窗口原生样式：无边框已由 pywebview 处理，这里补工具窗口/置顶 ----
     def _apply_native_style(self):
