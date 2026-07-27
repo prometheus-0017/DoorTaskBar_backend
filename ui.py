@@ -230,6 +230,7 @@ class CustomWindow:
             min_size=(1, 1),
             easy_drag=False,
         )
+        assert self.webWindow!=None
         self.webWindow.events.shown += self._on_shown
         return self.webWindow
 import pythonnet

@@ -19,14 +19,14 @@ class WindowChangeInfo(TypedDict):
     type:Literal['add','change','delete']
     data:WindowProxyDTO
 
-from typing import Callable,Awaitable
+from typing import Callable, Awaitable
 callbacklist:dict[str,Callable[[list[WindowChangeInfo]],Awaitable[None]]]={}
 
 import asyncio
 from logging import getLogger
 logger=getLogger(__name__)
 import logging
-logging.basicConfig(level=logging.INFO,filemode='log.txt')
+logging.basicConfig(level=logging.INFO,filename='log.txt')
 async def setCallback(context,id,callback):
     # 必须得标记callback的身份,因为无法确认对面是真的走了还是网络暂时断开
     callbacklist[id]=callback
@@ -67,18 +67,66 @@ class ChromeProxy:
     async def getHost(self)->str:
         ...
 chromeClients:dict[str,ChromeProxy]={}
+
+class ChromeClientState:
+    def __init__(self, proxy:'ChromeProxy'):
+        self.proxy = proxy
+        self.prevWindows: list[WindowProxyDTO] = []
+        self.tick: int = 0
+
+chromeClientStates: dict[str, ChromeClientState] = {}
+
+def _chromeWindowsToDTOs(windows: list) -> list[WindowProxyDTO]:
+    return [WindowProxyDTO(
+        processId=w.get('processId', 0),
+        id=w.get('id', 0),
+        pwd=w.get('pwd', ''),
+        system=w.get('system', 'chrome'),
+        originalName=w.get('originalName', ''),
+        modifiedName=w.get('modifiedName', ''),
+        processName=w.get('processName', ''),
+        originalIcon=w.get('originalIcon', ''),
+        modifiedIcon=w.get('modifiedIcon', '')
+    ) for w in windows]
+
+def _chromeDiff(hostId: str, currentWindows: list[WindowProxyDTO]) -> list[WindowChangeInfo]:
+    state = chromeClientStates[hostId]
+    prevMap = {w['id']: w for w in state.prevWindows}
+    currMap = {w['id']: w for w in currentWindows}
+    prevIds = set(prevMap.keys())
+    currIds = set(currMap.keys())
+    updates: list[WindowChangeInfo] = []
+    for wid in currIds - prevIds:
+        updates.append(WindowChangeInfo(type='add', data=currMap[wid]))
+    for wid in prevIds - currIds:
+        updates.append(WindowChangeInfo(type='delete', data=prevMap[wid]))
+    for wid in prevIds & currIds:
+        pw = prevMap[wid]
+        cw = currMap[wid]
+        if pw.get('originalName') != cw.get('originalName') or pw.get('modifiedName') != cw.get('modifiedName'):
+            updates.append(WindowChangeInfo(type='change', data=cw))
+    state.prevWindows = currentWindows
+    return updates
+
 import traceback
-async def loginChrome(context,chromeProxy):
-    hostId=await chromeProxy.getHost()
-    chromeClients[hostId]=chromeProxy
-    if(hostId in chromeClients):
-        # reconnecting, last client's ws is disconnected
-        pass
+async def loginChrome(context, chromeProxy):
+    hostId = await chromeProxy.getHost()
+    chromeClients[hostId] = chromeProxy
+    chromeClientStates[hostId] = ChromeClientState(chromeProxy)
+    currentWindows = await chromeProxy.sync()
+    currentDTOs = _chromeWindowsToDTOs(currentWindows)
+    state = chromeClientStates[hostId]
+    if state.prevWindows:
+        diffs = _chromeDiff(hostId, currentDTOs)
+        state.tick += 1
+        if diffs:
+            asyncio.ensure_future(_notify(diffs))
     else:
-        # as first time, maybe
-        lst=await chromeProxy.sync()
-        lst=[WindowChangeInfo(type='add',data=x) for x in lst]
-        asyncio.ensure_future(_notify(lst))
+        state.prevWindows = currentDTOs
+        state.tick = 0
+        adds = [WindowChangeInfo(type='add', data=x) for x in currentDTOs]
+        if adds:
+            asyncio.ensure_future(_notify(adds))
 
 async def sync(context):
     res=[]
@@ -93,12 +141,11 @@ async def sync(context):
         originalIcon=v.getIconPath(),
         modifiedIcon=v.getIconPath()
     ) for v in windowsBefore.values()]
-    for clientChrome in chromeClients.keys():
+    for hostId in chromeClientStates:
         try:
-            res+=await chromeClients[clientChrome].sync()
+            res += chromeClientStates[hostId].prevWindows
         except Exception as e:
             traceback.print_exc()
-            
     return res
 async def detectChange():
     global windowsBefore
@@ -163,11 +210,30 @@ async def detectChange():
     # await notify(infoUpdates)
     if(infoUpdates.__len__()!=0):
         asyncio.ensure_future(_notify(infoUpdates))
-async def notify(contiext,infos:list[WindowChangeInfo]):
-    if(type(infos)!=list):
-        print('unknown notifyData',infos)
-        return 
-    await _notify(infos)
+async def notify(context, payload):
+    # chrome only?bad name
+    hostId=payload.hostId
+    state = chromeClientStates[hostId]
+    # if not isinstance(payload, dict) or 'infos' not in payload or 'tick' not in payload:
+    #     print('unknown notifyData', payload)
+    #     return
+    infos = payload['infos']
+    tick = payload['tick']
+    expectedTick = state.tick + 1
+    if tick != expectedTick:
+        logger.warning(f'chrome {hostId} tick mismatch: expected {expectedTick}, got {tick}, requesting full sync')
+        try:
+            fullWindows = await state.proxy.sync()
+            fullDTOs = _chromeWindowsToDTOs(fullWindows)
+            state.prevWindows = fullDTOs
+            state.tick = tick
+            await _notify([WindowChangeInfo(type='add', data=w) for w in fullDTOs])
+            return
+        except Exception as e:
+            traceback.print_exc()
+            return
+    state.tick = tick
+    await _notify(payload)
 import json
 def saveStatus(sess,status):
     with open('status.json','w',encoding='utf-8') as f:
@@ -179,20 +245,20 @@ def loadStatus(sess):
             return json.loads(f.read())
     except :
         return None
-async def toTop(sess,windowId,system=None):
+async def toTop(sess, windowId, system=None):
     if(system==None or system=='win'):
         window_proxy.setTop(windowId)
         return
-    for client in chromeClients.values():
+    for hostId, state in chromeClientStates.items():
         try:
-            if(await client.getHost()==system):
-                await client.toTop(windowId)
+            if(await state.proxy.getHost()==system):
+                await state.proxy.toTop(windowId)
         except Exception as e:
             print('chrome totop failed,current id:',system)
             print('exist client:')
-            for key in chromeClients.keys():
+            for key in chromeClientStates.keys():
                 try:
-                    await chromeClients[key].getHost()
+                    await chromeClientStates[key].proxy.getHost()
                     connecting=True
                 except:
                     connecting=False
