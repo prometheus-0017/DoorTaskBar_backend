@@ -282,3 +282,20 @@ def setAllowRemote(sess,boolValue):
     from conf import conf
     conf['allowRemote']=boolValue
     return boolValue
+
+# ---- softSave / dumpSave ----
+_softSaveData = None
+
+def softSave(sess, status):
+    """前端定时调用，将数据暂存到内存中"""
+    global _softSaveData
+    _softSaveData = status
+    return True
+
+def dumpSave():
+    """将内存中的数据持久化到磁盘"""
+    global _softSaveData
+    if _softSaveData is None:
+        return False
+    saveStatus(None, _softSaveData)
+    return True

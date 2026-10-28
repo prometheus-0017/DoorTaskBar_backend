@@ -1,4 +1,16 @@
 
+import sys
+import importlib.util
+
+print(f"[debug] sys.executable: {sys.executable}")
+print(f"[debug] sys.path: {sys.path}")
+spec = importlib.util.find_spec("xuri_rpc")
+print(f"[debug] xuri_rpc spec: {spec}")
+if spec and spec.submodule_search_locations:
+    print(f"[debug] xuri_rpc path: {spec.submodule_search_locations}")
+spec_rpc = importlib.util.find_spec("xuri_rpc.rpc")
+print(f"[debug] xuri_rpc.rpc spec: {spec_rpc}")
+
 import asyncio
 import websockets
 import json
@@ -50,15 +62,15 @@ import conf
 from typing import cast
 from util import messageBox,is_port_in_use
 import sys
-import semi
+import lock
 def startWebSocket():
     
     if(is_port_in_use(conf.get('websocketPort'))):
         messageBox(f'{conf.get("websocketPort")}端口被占用')
         sys.exit(1)
 
-    semi.setOK(semi.FLAG_WEBSOCKET)
-    semi.waitForCheck()
+    lock.setOK(lock.FLAG_WEBSOCKET)
+    lock.waitForCheck()
     print('websocket continue')
 
     

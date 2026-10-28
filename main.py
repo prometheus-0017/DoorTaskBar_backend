@@ -53,14 +53,14 @@ from util import setEnv
 detach(startHttpServer)
 detach(startWebSocket)
 def env():
-    import semi
+    import lock
     setEnv('taskbar_http_port',conf.get('httpPort'))
     while(is_port_in_use(conf.get('httpPort'))==False):
         import time
         time.sleep(0.1)
-    semi.setOK(semi.FLAG_HTTP_START)
+    lock.setOK(lock.FLAG_HTTP_START)
 detach(env)
-import semi
-semi.waitForStart()
+import lock
+lock.waitForStart()
 # detach(tryStartKeyboardListener)
 startView()

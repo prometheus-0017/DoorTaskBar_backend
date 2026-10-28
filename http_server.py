@@ -40,6 +40,12 @@ def expand():
     from ui import getWindow
     getWindow().expandSignal.emit()
     return ''
+
+@app.route('/firm',methods=['POST'])
+def firm():
+    import rpc_content
+    result = rpc_content.dumpSave()
+    return {'dumped': result}
     
 
 @app.route('/<path:path>')
@@ -48,7 +54,7 @@ def static2(path):
 # @app.route('/dist/<path:path>')
 # def send_dist(path):
 #     return send_file('dist/'+path)
-import semi
+import lock
 import sys
 from util import is_port_in_use,messageBox,setEnv
 def startHttpServer():
@@ -57,8 +63,8 @@ def startHttpServer():
         messageBox(f'{conf.get('httpPort')}端口被占用')
         sys.exit(1)
 
-    semi.setOK(semi.FLAG_HTTP)
-    semi.waitForCheck()
+    lock.setOK(lock.FLAG_HTTP)
+    lock.waitForCheck()
     print('http continue')
 
     app.run(host='0.0.0.0',port=conf.get('httpPort'),debug=False)
