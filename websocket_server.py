@@ -1,16 +1,4 @@
 
-import sys
-import importlib.util
-
-print(f"[debug] sys.executable: {sys.executable}")
-print(f"[debug] sys.path: {sys.path}")
-spec = importlib.util.find_spec("xuri_rpc")
-print(f"[debug] xuri_rpc spec: {spec}")
-if spec and spec.submodule_search_locations:
-    print(f"[debug] xuri_rpc path: {spec.submodule_search_locations}")
-spec_rpc = importlib.util.find_spec("xuri_rpc.rpc")
-print(f"[debug] xuri_rpc.rpc spec: {spec_rpc}")
-
 import asyncio
 import websockets
 import json
